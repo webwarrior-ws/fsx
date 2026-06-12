@@ -56,7 +56,9 @@ module Process =
             (
                 subBuffer: list<OutputChunk>,
                 outputType: Option<Standard>
-            ) =
+            ) : StringBuilder =
+            let newStringBuilder = StringBuilder()
+
             subBuffer
             |> List.rev
             |> List.fold
@@ -66,7 +68,7 @@ module Process =
                     else
                         sb
                 )
-                (StringBuilder())
+                newStringBuilder
 
         let Print(subBuffer: list<OutputChunk>) : unit =
             subBuffer
