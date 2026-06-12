@@ -152,13 +152,19 @@ module Process =
                 Console.Error.WriteLine fullErrMsg
                 raise <| ProcessSucceededWithWarnings fullErrMsg
 
-        member self.UnwrapDefault() : string =
-            self.Unwrap(
-                sprintf
-                    "Error when running '%s %s'"
-                    self.Details.Command
-                    self.Details.Args
-            )
+        member self.UnwrapDefault(?ignoreWarnings: bool) : string =
+            let ignoreWarnings = defaultArg ignoreWarnings false
+
+            match self.Result with
+            | WarningsOrAmbiguous output when ignoreWarnings ->
+                output.ToString()
+            | _ ->
+                self.Unwrap(
+                    sprintf
+                        "Error when running '%s %s'"
+                        self.Details.Command
+                        self.Details.Args
+                )
 
 
     type ProcessCouldNotStart
