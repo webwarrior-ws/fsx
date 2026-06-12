@@ -154,11 +154,11 @@ module Process =
                 Console.Error.WriteLine fullErrMsg
                 raise <| ProcessSucceededWithWarnings fullErrMsg
 
-        member self.UnwrapDefault(?ignoreWarnings: bool) : string =
-            let ignoreWarnings = defaultArg ignoreWarnings false
+        member self.UnwrapDefault(?throwWhenWarnings: bool) : string =
+            let throwWhenWarnings = defaultArg throwWhenWarnings true
 
             match self.Result with
-            | WarningsOrAmbiguous output when ignoreWarnings ->
+            | WarningsOrAmbiguous output when (throwWhenWarnings = false) ->
                 output.ToString()
             | _ ->
                 self.Unwrap(
