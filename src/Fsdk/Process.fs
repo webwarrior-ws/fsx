@@ -369,6 +369,54 @@ module Process =
                 Result = ProcessResultState.Error(exitCode, output)
             }
 
+    let ExecDefault(commandAndArgs: string, echo: Echo) : ProcessResult =
+        let commandAndArgs = commandAndArgs.Trim()
+
+        let rec findUnescapedQuote(startIdx: int) : int =
+            let idx = commandAndArgs.IndexOf('"', startIdx)
+
+            if idx < 0 then
+                -1
+            elif idx > 0 && commandAndArgs.[idx - 1] = '\\' then
+                findUnescapedQuote(idx + 1)
+            else
+                idx
+
+        let command, arguments =
+            let commandAndArgs = commandAndArgs.Trim()
+
+            if commandAndArgs.StartsWith("\"") then
+                let closeIdx = findUnescapedQuote 1
+
+                if closeIdx < 0 then
+                    // Unclosed quote: treat as unquoted
+                    let spaceIdx = commandAndArgs.IndexOf(' ')
+
+                    if spaceIdx < 0 then
+                        commandAndArgs, String.Empty
+                    else
+                        commandAndArgs.Substring(0, spaceIdx),
+                        commandAndArgs.Substring(spaceIdx + 1).Trim()
+                else
+                    commandAndArgs.Substring(0, closeIdx + 1),
+                    commandAndArgs.Substring(closeIdx + 1).Trim()
+            else
+                let spaceIdx = commandAndArgs.IndexOf(' ')
+
+                if spaceIdx < 0 then
+                    commandAndArgs, String.Empty
+                else
+                    commandAndArgs.Substring(0, spaceIdx),
+                    commandAndArgs.Substring(spaceIdx + 1).Trim()
+
+        Execute(
+            {
+                Command = command
+                Arguments = arguments
+            },
+            echo
+        )
+
     let rec private ExceptionIsOfTypeOrIncludesAnyInnerExceptionOfType
         (
             ex: Exception,
