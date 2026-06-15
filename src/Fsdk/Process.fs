@@ -180,15 +180,22 @@ module Process =
                 innerException
             )
 
+
+type Process =
+
     // TODO: explore if this complex implementation can be replaced with https://www.nuget.org/packages/Owl.cli
     //       (maybe only after https://github.com/tatsuya-midorikawa/Owl.cli/issues/3 is addressed)
-    let Execute(procDetails: ProcessDetails, echo: Echo) : ProcessResult =
+    static member Execute
+        (
+            procDetails: Process.ProcessDetails,
+            echo: Process.Echo
+        ) : Process.ProcessResult =
 
         // I know, this shit below is mutable, but it's a consequence of dealing with .NET's Process class' events?
-        let mutable outputBuffer: list<OutputChunk> = []
-        let queuedLock = QueuedLock()
+        let mutable outputBuffer: list<Process.OutputChunk> = []
+        let queuedLock = Process.QueuedLock()
 
-        if (echo = Echo.All) then
+        if (echo = Process.Echo.All) then
             Console.WriteLine(
                 sprintf "%s %s" procDetails.Command procDetails.Arguments
             )
@@ -204,22 +211,22 @@ module Process =
         use proc = new System.Diagnostics.Process()
         proc.StartInfo <- startInfo
 
-        let ReadStandard(std: Standard) =
+        let ReadStandard(std: Process.Standard) =
 
             let print =
                 match std with
-                | Standard.Output -> Console.Write: char -> unit
-                | Standard.Error -> Console.Error.Write
+                | Process.Standard.Output -> Console.Write: char -> unit
+                | Process.Standard.Error -> Console.Error.Write
 
             let flush =
                 match std with
-                | Standard.Output -> Console.Out.Flush
-                | Standard.Error -> Console.Error.Flush
+                | Process.Standard.Output -> Console.Out.Flush
+                | Process.Standard.Error -> Console.Error.Flush
 
             let outputToReadFrom =
                 match std with
-                | Standard.Output -> proc.StandardOutput
-                | Standard.Error -> proc.StandardError
+                | Process.Standard.Output -> proc.StandardOutput
+                | Process.Standard.Error -> proc.StandardError
 
             let ReadIteration() : bool =
                 let append(charToAppend: char) : unit =
@@ -230,15 +237,17 @@ module Process =
                     | [] ->
                         let newBlock =
                             match std with
-                            | Standard.Output ->
+                            | Process.Standard.Output ->
                                 {
-                                    OutputType = Standard.Output
-                                    Chunk = newBuilder
+                                    Process.OutputChunk.OutputType =
+                                        Process.Standard.Output
+                                    Process.OutputChunk.Chunk = newBuilder
                                 }
-                            | Standard.Error ->
+                            | Process.Standard.Error ->
                                 {
-                                    OutputType = Standard.Error
-                                    Chunk = newBuilder
+                                    Process.OutputChunk.OutputType =
+                                        Process.Standard.Error
+                                    Process.OutputChunk.Chunk = newBuilder
                                 }
 
                         outputBuffer <- List.singleton newBlock
@@ -248,13 +257,13 @@ module Process =
                         else
                             let newBlock =
                                 {
-                                    OutputType = std
-                                    Chunk = newBuilder
+                                    Process.OutputChunk.OutputType = std
+                                    Process.OutputChunk.Chunk = newBuilder
                                 }
 
                             outputBuffer <- newBlock :: outputBuffer
 
-                    if not(echo = Echo.Off) then
+                    if not(echo = Process.Echo.Off) then
                         print charToAppend
                         flush()
 
@@ -325,15 +334,19 @@ module Process =
                 ignore None
 
         let outReaderThread =
-            new Thread(new ThreadStart(fun _ -> ReadStandard(Standard.Output)))
+            new Thread(
+                new ThreadStart(fun _ -> ReadStandard(Process.Standard.Output))
+            )
 
         let errReaderThread =
-            new Thread(new ThreadStart(fun _ -> ReadStandard(Standard.Error)))
+            new Thread(
+                new ThreadStart(fun _ -> ReadStandard(Process.Standard.Error))
+            )
 
         try
             proc.Start() |> ignore
         with
-        | ex -> raise <| ProcessCouldNotStart(procDetails, ex)
+        | ex -> raise <| Process.ProcessCouldNotStart(procDetails, ex)
 
         outReaderThread.Start()
         errReaderThread.Start()
@@ -343,33 +356,43 @@ module Process =
         outReaderThread.Join()
         errReaderThread.Join()
 
-        let output = OutputBuffer outputBuffer
+        let output = Process.OutputBuffer outputBuffer
 
         let procRunResultDetails =
             {
-                Command = procDetails.Command
-                Args = procDetails.Arguments
-                Echo = echo
+                Process.RunDetails.Command = procDetails.Command
+                Process.RunDetails.Args = procDetails.Arguments
+                Process.RunDetails.Echo = echo
             }
 
         match exitCode with
         | 0 when output.StdErr.Length = 0 ->
             {
-                Details = procRunResultDetails
-                Result = ProcessResultState.Success output.StdOut
+                Process.ProcessResult.Details = procRunResultDetails
+                Process.ProcessResult.Result =
+                    Process.ProcessResultState.Success output.StdOut
             }
         | 0 ->
             {
-                Details = procRunResultDetails
-                Result = ProcessResultState.WarningsOrAmbiguous output
+                Process.ProcessResult.Details = procRunResultDetails
+                Process.ProcessResult.Result =
+                    Process.ProcessResultState.WarningsOrAmbiguous output
             }
         | _ ->
             {
-                Details = procRunResultDetails
-                Result = ProcessResultState.Error(exitCode, output)
+                Process.ProcessResult.Details = procRunResultDetails
+                Process.ProcessResult.Result =
+                    Process.ProcessResultState.Error(exitCode, output)
             }
 
-    let ExecDefault(commandAndArgs: string, echo: Echo) : ProcessResult =
+#if !LEGACY_FRAMEWORK
+
+    static member ExecDefault
+        (
+            commandAndArgs: string,
+            ?echo: Process.Echo
+        ) : Process.ProcessResult =
+        let echo = defaultArg echo Process.Echo.All
         let commandAndArgs = commandAndArgs.Trim()
 
         let rec findUnescapedQuote(startIdx: int) : int =
@@ -409,15 +432,17 @@ module Process =
                     commandAndArgs.Substring(0, spaceIdx),
                     commandAndArgs.Substring(spaceIdx + 1).Trim()
 
-        Execute(
+        Process.Execute(
             {
-                Command = command
-                Arguments = arguments
+                Process.ProcessDetails.Command = command
+                Process.ProcessDetails.Arguments = arguments
             },
             echo
         )
 
-    let rec private ExceptionIsOfTypeOrIncludesAnyInnerExceptionOfType
+#endif
+
+    static member private ExceptionIsOfTypeOrIncludesAnyInnerExceptionOfType
         (
             ex: Exception,
             t: Type
@@ -427,29 +452,29 @@ module Process =
         else if (ex.GetType() = t) then
             true
         else
-            ExceptionIsOfTypeOrIncludesAnyInnerExceptionOfType(
+            Process.ExceptionIsOfTypeOrIncludesAnyInnerExceptionOfType(
                 ex.InnerException,
                 t
             )
 
-    let rec private CheckIfCommandWorksInShellWithWhich
+    static member private CheckIfCommandWorksInShellWithWhich
         (command: string)
         : bool =
         let WhichCommandWorksInShell() : bool =
             let maybeResult =
                 try
                     Some(
-                        Execute(
+                        Process.Execute(
                             {
-                                Command = "which"
-                                Arguments = String.Empty
+                                Process.ProcessDetails.Command = "which"
+                                Process.ProcessDetails.Arguments = String.Empty
                             },
-                            Echo.Off
+                            Process.Echo.Off
                         )
                     )
                 with
                 | ex when
-                    (ExceptionIsOfTypeOrIncludesAnyInnerExceptionOfType(
+                    (Process.ExceptionIsOfTypeOrIncludesAnyInnerExceptionOfType(
                         ex,
                         typeof<System.ComponentModel.Win32Exception>
                     ))
@@ -465,60 +490,61 @@ module Process =
             failwith "'which' doesn't work, please install it first"
 
         let proc =
-            Execute(
+            Process.Execute(
                 {
-                    Command = "which"
-                    Arguments = command
+                    Process.ProcessDetails.Command = "which"
+                    Process.ProcessDetails.Arguments = command
                 },
-                Echo.Off
+                Process.Echo.Off
             )
 
         match proc.Result with
-        | ProcessResultState.Error _ -> false
-        | ProcessResultState.WarningsOrAmbiguous output ->
+        | Process.ProcessResultState.Error _ -> false
+        | Process.ProcessResultState.WarningsOrAmbiguous output ->
             output.PrintToConsole()
             Console.WriteLine()
             Console.Out.Flush()
             Console.Error.Flush()
             failwith "Unexpected 'which' output ^ (with warnings?)"
-        | ProcessResultState.Success _ -> true
+        | Process.ProcessResultState.Success _ -> true
 
-    let private HasWindowsExecutableExtension(path: string) =
+    static member private HasWindowsExecutableExtension(path: string) =
         //FIXME: should do it in a case-insensitive way
         path.EndsWith(".exe")
         || path.EndsWith(".bat")
         || path.EndsWith(".cmd")
         || path.EndsWith(".com")
 
-    let private IsFileInWindowsPath(command: string) =
+    static member private IsFileInWindowsPath(command: string) =
         let pathEnvVar = Environment.GetEnvironmentVariable("PATH")
         let paths = pathEnvVar.Split(Path.PathSeparator)
         paths.Any(fun path -> File.Exists(Path.Combine(path, command)))
 
-    let CommandWorksInShell(command: string) : bool =
+    static member CommandWorksInShell(command: string) : bool =
         if (Misc.GuessPlatform() = Misc.Platform.Windows) then
-            let exists = File.Exists(command) || IsFileInWindowsPath(command)
+            let exists =
+                File.Exists(command) || Process.IsFileInWindowsPath(command)
 
-            if (exists && HasWindowsExecutableExtension(command)) then
+            if (exists && Process.HasWindowsExecutableExtension(command)) then
                 true
             else
                 try
-                    Execute(
+                    Process.Execute(
                         {
-                            Command = command
-                            Arguments = String.Empty
+                            Process.ProcessDetails.Command = command
+                            Process.ProcessDetails.Arguments = String.Empty
                         },
-                        Echo.Off
+                        Process.Echo.Off
                     )
-                    |> ignore<ProcessResult>
+                    |> ignore<Process.ProcessResult>
 
                     true
                 with
-                | :? ProcessCouldNotStart -> false
+                | :? Process.ProcessCouldNotStart -> false
         else
-            CheckIfCommandWorksInShellWithWhich(command)
+            Process.CheckIfCommandWorksInShellWithWhich(command)
 
-    let ConfigCommandCheck
+    static member ConfigCommandCheck
         (commandNamesByOrderOfPreference: seq<string>)
         (exitIfNotFound: bool)
         (printConfigureChecks: bool)
@@ -529,7 +555,7 @@ module Process =
                 if printConfigureChecks then
                     Console.Write(sprintf "checking for %s... " currentCommand)
 
-                if not(CommandWorksInShell currentCommand) then
+                if not(Process.CommandWorksInShell currentCommand) then
                     if printConfigureChecks then
                         Console.WriteLine "not found"
 
@@ -559,7 +585,7 @@ module Process =
             commandNamesByOrderOfPreference
 
     // FIXME: it returns the first result, but we should return all (array<string>)
-    let VsWhere(searchPattern: string) : Option<string> =
+    static member VsWhere(searchPattern: string) : Option<string> =
         if Misc.GuessPlatform() <> Misc.Platform.Windows then
             failwith "vswhere.exe doesn't exist in other platforms than Windows"
 
@@ -575,16 +601,20 @@ module Process =
             )
             |> FileInfo
 
-        ConfigCommandCheck (List.singleton vswhereExe.FullName) true false
+        Process.ConfigCommandCheck
+            (List.singleton vswhereExe.FullName)
+            true
+            false
         |> ignore
 
         let vswhereCmd =
             {
-                Command = vswhereExe.FullName
-                Arguments = sprintf "-find %s" searchPattern
+                Process.ProcessDetails.Command = vswhereExe.FullName
+                Process.ProcessDetails.Arguments =
+                    sprintf "-find %s" searchPattern
             }
 
-        let procResult = Execute(vswhereCmd, Echo.Off)
+        let procResult = Process.Execute(vswhereCmd, Process.Echo.Off)
 
         let entries =
             procResult
